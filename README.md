@@ -11,8 +11,8 @@ Gemini API (Google Gen AI SDK, `google-genai`).
 - System prompt tuned for UPSC answers: direct answer first, then a plain
   explanation, syllabus/current-affairs relevance, and a quick revision
   recap.
-- Sidebar with example questions, a model picker (Gemini 3.8 Flash /
-  3.1 Pro Preview / 3.1 Flash-Lite), and a "Clear conversation" button.
+- Sidebar with example questions and a "Clear conversation" button.
+- Uses Gemini 3.1 Flash only — no model picker, kept simple for a chatbot.
 - Streamed responses (tokens appear as they're generated).
 
 ## Setup
@@ -51,9 +51,7 @@ GEMINI_API_KEY = "..."
 (or create `.streamlit/secrets.toml` locally with the same content — it is
 git-ignored).
 
-## Changing the model / cost
+## Model
 
-The sidebar model picker defaults to `gemini-3.8-flash` (fast, generally
-available, cost-effective). Switch to `gemini-3.1-pro-preview` for the
-highest-quality answers, or `gemini-3.1-flash-lite` for the cheapest/fastest
-option.
+Hardcoded to `gemini-3.1-flash` in `app.py` (the `MODEL` constant). Change
+that constant if you ever want a different model.

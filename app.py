@@ -12,12 +12,7 @@ try:
 except ImportError:
     pass
 
-DEFAULT_MODEL = "gemini-3.8-flash"
-MODEL_OPTIONS = {
-    "Gemini 3.8 Flash (recommended, fast & GA)": "gemini-3.8-flash",
-    "Gemini 3.1 Pro Preview (highest quality)": "gemini-3.1-pro-preview",
-    "Gemini 3.1 Flash-Lite (fastest / cheapest)": "gemini-3.1-flash-lite",
-}
+MODEL = "gemini-3.1-flash"
 
 SYSTEM_PROMPT = """You are an expert UPSC (Union Public Service Commission) \
 Civil Services Examination mentor. Aspirants ask you Prelims, Mains, and \
@@ -89,10 +84,6 @@ EXAMPLE_QUESTIONS = [
 
 with st.sidebar:
     st.header("Settings")
-    model_label = st.selectbox("Model", list(MODEL_OPTIONS.keys()), index=0)
-    selected_model = MODEL_OPTIONS[model_label]
-
-    st.divider()
     st.subheader("Try an example")
     example_clicked = None
     for q in EXAMPLE_QUESTIONS:
@@ -158,7 +149,7 @@ if prompt:
 
         def stream_answer():
             for chunk in client.models.generate_content_stream(
-                model=selected_model,
+                model=MODEL,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
