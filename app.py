@@ -4,6 +4,10 @@ import streamlit as st
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
+from xai_sdk import Client as XaiClient
+from xai_sdk.chat import assistant as xai_assistant
+from xai_sdk.chat import system as xai_system
+from xai_sdk.chat import user as xai_user
 
 try:
     from dotenv import load_dotenv
@@ -12,7 +16,8 @@ try:
 except ImportError:
     pass
 
-MODEL = "gemini-flash-latest"
+GEMINI_MODEL = "gemini-flash-latest"
+GROK_MODEL = "grok-4-fast-non-reasoning"
 
 SYSTEM_PROMPT = """You are an expert UPSC (Union Public Service Commission) \
 Civil Services Examination mentor. Aspirants ask you Prelims, Mains, and \
@@ -96,7 +101,7 @@ with st.sidebar:
         st.rerun()
 
 
-def get_api_key():
+def get_gemini_api_key():
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if key:
         return key
@@ -106,13 +111,28 @@ def get_api_key():
         return None
 
 
+def get_xai_api_key():
+    key = os.environ.get("XAI_API_KEY")
+    if key:
+        return key
+    try:
+        return st.secrets.get("XAI_API_KEY")
+    except Exception:
+        return None
+
+
 @st.cache_resource
-def get_client(api_key: str):
+def get_gemini_client(api_key: str):
     return genai.Client(api_key=api_key)
 
 
-api_key = get_api_key()
-if not api_key:
+@st.cache_resource
+def get_xai_client(api_key: str):
+    return XaiClient(api_key=api_key)
+
+
+gemini_api_key = get_gemini_api_key()
+if not gemini_api_key:
     st.error(
         "No Gemini API key found. Set the `GEMINI_API_KEY` environment "
         "variable (e.g. in a `.env` file) or add it to "
@@ -120,7 +140,10 @@ if not api_key:
     )
     st.stop()
 
-client = get_client(api_key)
+gemini_client = get_gemini_client(gemini_api_key)
+
+xai_api_key = get_xai_api_key()
+xai_client = get_xai_client(xai_api_key) if xai_api_key else None
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -139,7 +162,7 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="\U0001F3DB️"):
-        contents = [
+        gemini_contents = [
             types.Content(
                 role="user" if m["role"] == "user" else "model",
                 parts=[types.Part(text=m["content"])],
@@ -147,10 +170,12 @@ if prompt:
             for m in st.session_state.messages
         ]
 
-        def stream_answer():
-            for chunk in client.models.generate_content_stream(
-                model=MODEL,
-                contents=contents,
+        used_fallback = {"value": False}
+
+        def stream_gemini():
+            for chunk in gemini_client.models.generate_content_stream(
+                model=GEMINI_MODEL,
+                contents=gemini_contents,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
                     max_output_tokens=4096,
@@ -158,6 +183,28 @@ if prompt:
             ):
                 if chunk.text:
                     yield chunk.text
+
+        def stream_grok():
+            xai_messages = [xai_system(SYSTEM_PROMPT)]
+            for m in st.session_state.messages:
+                xai_messages.append(
+                    xai_user(m["content"])
+                    if m["role"] == "user"
+                    else xai_assistant(m["content"])
+                )
+            chat = xai_client.chat.create(model=GROK_MODEL, messages=xai_messages)
+            for _, chunk in chat.stream():
+                if chunk.content:
+                    yield chunk.content
+
+        def stream_answer():
+            try:
+                yield from stream_gemini()
+            except Exception:
+                if not xai_client:
+                    raise
+                used_fallback["value"] = True
+                yield from stream_grok()
 
         full_response = None
         try:
@@ -173,6 +220,11 @@ if prompt:
             st.error(f"Gemini API server error, please retry: {e.message or e}")
         except genai_errors.APIError as e:
             st.error(f"Gemini API error: {e.message or e}")
+        except Exception as e:
+            st.error(f"Grok API error: {e}")
+
+        if used_fallback["value"] and full_response:
+            st.caption("⚡ Answered by Grok (Gemini was unavailable)")
 
     if full_response:
         st.session_state.messages.append(
