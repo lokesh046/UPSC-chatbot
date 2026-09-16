@@ -2,7 +2,7 @@
 
 A Streamlit chatbot that answers UPSC Civil Services Examination questions
 (Prelims, Mains, Essay) with clear, exam-ready explanations, powered by the
-Claude API.
+Gemini API (Google Gen AI SDK, `google-genai`).
 
 ## Features
 
@@ -11,8 +11,8 @@ Claude API.
 - System prompt tuned for UPSC answers: direct answer first, then a plain
   explanation, syllabus/current-affairs relevance, and a quick revision
   recap.
-- Sidebar with example questions, a model picker (Opus 5 / Sonnet 5 /
-  Haiku 4.5), and a "Clear conversation" button.
+- Sidebar with example questions, a model picker (Gemini 3.8 Flash /
+  3.1 Pro Preview / 3.1 Flash-Lite), and a "Clear conversation" button.
 - Streamed responses (tokens appear as they're generated).
 
 ## Setup
@@ -25,10 +25,10 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and set your key:
+Edit `.env` and set your key (get one at https://aistudio.google.com/apikey):
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
 ```
 
 ## Run
@@ -45,7 +45,7 @@ Instead of a `.env` file, add the key under
 **App settings -> Secrets** as:
 
 ```toml
-ANTHROPIC_API_KEY = "sk-ant-..."
+GEMINI_API_KEY = "..."
 ```
 
 (or create `.streamlit/secrets.toml` locally with the same content — it is
@@ -53,6 +53,7 @@ git-ignored).
 
 ## Changing the model / cost
 
-The sidebar model picker defaults to `claude-opus-5`. Switch to
-`claude-sonnet-5` or `claude-haiku-4-5` for a cheaper/faster chatbot if
-Opus-level depth isn't needed for every question.
+The sidebar model picker defaults to `gemini-3.8-flash` (fast, generally
+available, cost-effective). Switch to `gemini-3.1-pro-preview` for the
+highest-quality answers, or `gemini-3.1-flash-lite` for the cheapest/fastest
+option.

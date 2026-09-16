@@ -1,7 +1,9 @@
 import os
 
 import streamlit as st
-from anthropic import Anthropic, APIError, AuthenticationError, RateLimitError
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types
 
 try:
     from dotenv import load_dotenv
@@ -10,11 +12,11 @@ try:
 except ImportError:
     pass
 
-DEFAULT_MODEL = "claude-opus-5"
+DEFAULT_MODEL = "gemini-3.8-flash"
 MODEL_OPTIONS = {
-    "Claude Opus 5 (most capable)": "claude-opus-5",
-    "Claude Sonnet 5 (balanced)": "claude-sonnet-5",
-    "Claude Haiku 4.5 (fastest / cheapest)": "claude-haiku-4-5",
+    "Gemini 3.8 Flash (recommended, fast & GA)": "gemini-3.8-flash",
+    "Gemini 3.1 Pro Preview (highest quality)": "gemini-3.1-pro-preview",
+    "Gemini 3.1 Flash-Lite (fastest / cheapest)": "gemini-3.1-flash-lite",
 }
 
 SYSTEM_PROMPT = """You are an expert UPSC (Union Public Service Commission) \
@@ -104,24 +106,24 @@ with st.sidebar:
 
 
 def get_api_key():
-    key = os.environ.get("ANTHROPIC_API_KEY")
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if key:
         return key
     try:
-        return st.secrets.get("ANTHROPIC_API_KEY")
+        return st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     except Exception:
         return None
 
 
 @st.cache_resource
 def get_client(api_key: str):
-    return Anthropic(api_key=api_key)
+    return genai.Client(api_key=api_key)
 
 
 api_key = get_api_key()
 if not api_key:
     st.error(
-        "No Claude API key found. Set the `ANTHROPIC_API_KEY` environment "
+        "No Gemini API key found. Set the `GEMINI_API_KEY` environment "
         "variable (e.g. in a `.env` file) or add it to "
         "`.streamlit/secrets.toml`, then restart the app."
     )
@@ -146,31 +148,40 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="\U0001F3DB️"):
-        api_messages = [
-            {"role": m["role"], "content": m["content"]}
+        contents = [
+            types.Content(
+                role="user" if m["role"] == "user" else "model",
+                parts=[types.Part(text=m["content"])],
+            )
             for m in st.session_state.messages
         ]
 
         def stream_answer():
-            with client.messages.stream(
+            for chunk in client.models.generate_content_stream(
                 model=selected_model,
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                output_config={"effort": "medium"},
-                messages=api_messages,
-            ) as stream:
-                for text in stream.text_stream:
-                    yield text
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    max_output_tokens=4096,
+                ),
+            ):
+                if chunk.text:
+                    yield chunk.text
 
         full_response = None
         try:
             full_response = st.write_stream(stream_answer)
-        except AuthenticationError:
-            st.error("Invalid Claude API key. Check `ANTHROPIC_API_KEY` and try again.")
-        except RateLimitError:
-            st.error("Rate limited by the Claude API. Please wait a moment and try again.")
-        except APIError as e:
-            st.error(f"Claude API error: {e}")
+        except genai_errors.ClientError as e:
+            if e.code in (400, 401, 403) and "API key" in (e.message or ""):
+                st.error("Invalid Gemini API key. Check `GEMINI_API_KEY` and try again.")
+            elif e.code == 429:
+                st.error("Rate limited by the Gemini API. Please wait a moment and try again.")
+            else:
+                st.error(f"Gemini API error: {e.message or e}")
+        except genai_errors.ServerError as e:
+            st.error(f"Gemini API server error, please retry: {e.message or e}")
+        except genai_errors.APIError as e:
+            st.error(f"Gemini API error: {e.message or e}")
 
     if full_response:
         st.session_state.messages.append(
