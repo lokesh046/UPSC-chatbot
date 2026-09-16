@@ -232,35 +232,45 @@ if prompt:
                     yield chunk.content
 
         def stream_answer():
+            errors = []
+
             try:
                 yield from stream_openrouter()
                 return
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"OpenRouter: {e}")
 
             if gemini_client:
                 provider_used["name"] = "Gemini"
                 try:
                     yield from stream_gemini()
                     return
-                except Exception:
-                    pass
+                except Exception as e:
+                    errors.append(f"Gemini: {e}")
 
             if xai_client:
                 provider_used["name"] = "Grok"
-                yield from stream_grok()
-                return
+                try:
+                    yield from stream_grok()
+                    return
+                except Exception as e:
+                    errors.append(f"Grok: {e}")
+
+            if not gemini_client and not xai_client:
+                errors.append(
+                    "No fallback provider (Gemini/Grok) is configured."
+                )
 
             raise RuntimeError(
-                "OpenRouter failed and no fallback provider (Gemini/Grok) "
-                "is configured."
+                "All providers failed:\n"
+                + "\n".join(f"- {msg}" for msg in errors)
             )
 
         full_response = None
         try:
             full_response = st.write_stream(stream_answer)
         except Exception as e:
-            st.error(f"All providers failed. Last error: {e}")
+            st.error(str(e))
 
         if provider_used["name"] != "OpenRouter" and full_response:
             st.caption(
