@@ -12,7 +12,7 @@ try:
 except ImportError:
     pass
 
-MODEL = "gemini-3.1-flash"
+MODEL = "gemini-flash-latest"
 
 SYSTEM_PROMPT = """You are an expert UPSC (Union Public Service Commission) \
 Civil Services Examination mentor. Aspirants ask you Prelims, Mains, and \

@@ -12,7 +12,7 @@ Gemini API (Google Gen AI SDK, `google-genai`).
   explanation, syllabus/current-affairs relevance, and a quick revision
   recap.
 - Sidebar with example questions and a "Clear conversation" button.
-- Uses Gemini 3.1 Flash only — no model picker, kept simple for a chatbot.
+- Uses the Gemini Flash model only — no model picker, kept simple for a chatbot.
 - Streamed responses (tokens appear as they're generated).
 
 ## Setup
@@ -53,5 +53,9 @@ git-ignored).
 
 ## Model
 
-Hardcoded to `gemini-3.1-flash` in `app.py` (the `MODEL` constant). Change
-that constant if you ever want a different model.
+Hardcoded to `gemini-flash-latest` in `app.py` (the `MODEL` constant) —
+Google's floating alias that always resolves to their current Flash model,
+so it keeps working as new versions ship. Change that constant if you ever
+want to pin a specific dated version instead (check
+https://ai.google.dev/gemini-api/docs/models for exact IDs your key has
+access to, or call `client.models.list()`).
