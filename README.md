@@ -1,9 +1,9 @@
 # UPSC Q&A Chatbot
 
 A Streamlit chatbot that answers UPSC Civil Services Examination questions
-(Prelims, Mains, Essay) with clear, exam-ready explanations, powered by the
-Gemini API (Google Gen AI SDK, `google-genai`), with automatic fallback to
-the Grok API (`xai-sdk`) if Gemini errors out.
+(Prelims, Mains, Essay) with clear, exam-ready explanations. Uses
+**OpenRouter** as the main provider (a cheap general-purpose model), with
+automatic fallback to Gemini, then Grok, if OpenRouter fails.
 
 ## Features
 
@@ -13,11 +13,10 @@ the Grok API (`xai-sdk`) if Gemini errors out.
   explanation, syllabus/current-affairs relevance, and a quick revision
   recap.
 - Sidebar with example questions and a "Clear conversation" button.
-- Uses one Gemini model and one Grok model only — no model picker, kept
-  simple for a chatbot.
-- If the Gemini call fails (bad key, rate limit, outage), the same
-  question is automatically retried against Grok and the answer is
-  labelled "Answered by Grok" so you know which model replied.
+- One model per provider, no model picker — kept simple for a chatbot.
+- Three-tier fallback: if OpenRouter fails, the same question is retried
+  against Gemini, then Grok. The reply is labelled "Answered by Gemini" /
+  "Answered by Grok" whenever a fallback answered instead of OpenRouter.
 - Streamed responses (tokens appear as they're generated).
 
 ## Setup
@@ -33,12 +32,14 @@ cp .env.example .env
 Edit `.env` and set your keys:
 
 ```
-GEMINI_API_KEY=...   # required — get one at https://aistudio.google.com/apikey
-XAI_API_KEY=...       # optional — powers the Grok fallback, get one at https://console.x.ai
+OPENROUTER_API_KEY=...   # required — get one at https://openrouter.ai/keys
+GEMINI_API_KEY=...       # optional fallback — https://aistudio.google.com/apikey
+XAI_API_KEY=...          # optional fallback — https://console.x.ai
 ```
 
-If `XAI_API_KEY` is left blank, the app still runs — it just surfaces the
-Gemini error directly instead of falling back.
+`GEMINI_API_KEY` and `XAI_API_KEY` are both optional. If neither is set,
+the app still runs on OpenRouter alone — an OpenRouter failure just
+surfaces its error directly instead of falling back.
 
 ## Run
 
@@ -50,10 +51,11 @@ The app opens at `http://localhost:8501`.
 
 ## Deploying (e.g. Streamlit Community Cloud)
 
-Instead of a `.env` file, add the key under
+Instead of a `.env` file, add the keys under
 **App settings -> Secrets** as:
 
 ```toml
+OPENROUTER_API_KEY = "..."
 GEMINI_API_KEY = "..."
 XAI_API_KEY = "..."
 ```
@@ -63,10 +65,15 @@ git-ignored).
 
 ## Models
 
-- Primary: `gemini-flash-latest` (the `GEMINI_MODEL` constant in `app.py`) —
+- **Main**: `meta-llama/llama-3.3-70b-instruct` via OpenRouter (the
+  `OPENROUTER_MODEL` constant in `app.py`) — cheap (~$0.10 / $0.32 per
+  million input/output tokens) and capable enough for exam-style
+  explanations.
+- **Fallback 1**: `gemini-flash-latest` (the `GEMINI_MODEL` constant) —
   Google's floating alias that always resolves to their current Flash
-  model, so it keeps working as new versions ship.
-- Fallback: `grok-4-fast-non-reasoning` (the `GROK_MODEL` constant) — used
-  automatically only when the Gemini call raises an error.
+  model.
+- **Fallback 2**: `grok-4-fast-non-reasoning` (the `GROK_MODEL` constant).
 
-Change either constant if you want to pin a different model.
+Change any constant if you want to pin a different model. Browse
+OpenRouter's catalog and live pricing at https://openrouter.ai/models if
+you want an even cheaper (or different) main model.

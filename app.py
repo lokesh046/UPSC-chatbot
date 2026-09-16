@@ -2,8 +2,8 @@ import os
 
 import streamlit as st
 from google import genai
-from google.genai import errors as genai_errors
 from google.genai import types
+from openai import OpenAI
 from xai_sdk import Client as XaiClient
 from xai_sdk.chat import assistant as xai_assistant
 from xai_sdk.chat import system as xai_system
@@ -16,6 +16,7 @@ try:
 except ImportError:
     pass
 
+OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct"
 GEMINI_MODEL = "gemini-flash-latest"
 GROK_MODEL = "grok-4-fast-non-reasoning"
 
@@ -101,6 +102,16 @@ with st.sidebar:
         st.rerun()
 
 
+def get_openrouter_api_key():
+    key = os.environ.get("OPENROUTER_API_KEY")
+    if key:
+        return key
+    try:
+        return st.secrets.get("OPENROUTER_API_KEY")
+    except Exception:
+        return None
+
+
 def get_gemini_api_key():
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if key:
@@ -122,6 +133,11 @@ def get_xai_api_key():
 
 
 @st.cache_resource
+def get_openrouter_client(api_key: str):
+    return OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+
+
+@st.cache_resource
 def get_gemini_client(api_key: str):
     return genai.Client(api_key=api_key)
 
@@ -131,16 +147,19 @@ def get_xai_client(api_key: str):
     return XaiClient(api_key=api_key)
 
 
-gemini_api_key = get_gemini_api_key()
-if not gemini_api_key:
+openrouter_api_key = get_openrouter_api_key()
+if not openrouter_api_key:
     st.error(
-        "No Gemini API key found. Set the `GEMINI_API_KEY` environment "
-        "variable (e.g. in a `.env` file) or add it to "
+        "No OpenRouter API key found. Set the `OPENROUTER_API_KEY` "
+        "environment variable (e.g. in a `.env` file) or add it to "
         "`.streamlit/secrets.toml`, then restart the app."
     )
     st.stop()
 
-gemini_client = get_gemini_client(gemini_api_key)
+openrouter_client = get_openrouter_client(openrouter_api_key)
+
+gemini_api_key = get_gemini_api_key()
+gemini_client = get_gemini_client(gemini_api_key) if gemini_api_key else None
 
 xai_api_key = get_xai_api_key()
 xai_client = get_xai_client(xai_api_key) if xai_api_key else None
@@ -162,17 +181,32 @@ if prompt:
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="\U0001F3DB️"):
-        gemini_contents = [
-            types.Content(
-                role="user" if m["role"] == "user" else "model",
-                parts=[types.Part(text=m["content"])],
-            )
-            for m in st.session_state.messages
-        ]
+        provider_used = {"name": "OpenRouter"}
 
-        used_fallback = {"value": False}
+        def stream_openrouter():
+            or_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            or_messages.extend(
+                {"role": m["role"], "content": m["content"]}
+                for m in st.session_state.messages
+            )
+            stream = openrouter_client.chat.completions.create(
+                model=OPENROUTER_MODEL,
+                messages=or_messages,
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
 
         def stream_gemini():
+            gemini_contents = [
+                types.Content(
+                    role="user" if m["role"] == "user" else "model",
+                    parts=[types.Part(text=m["content"])],
+                )
+                for m in st.session_state.messages
+            ]
             for chunk in gemini_client.models.generate_content_stream(
                 model=GEMINI_MODEL,
                 contents=gemini_contents,
@@ -199,32 +233,40 @@ if prompt:
 
         def stream_answer():
             try:
-                yield from stream_gemini()
+                yield from stream_openrouter()
+                return
             except Exception:
-                if not xai_client:
-                    raise
-                used_fallback["value"] = True
+                pass
+
+            if gemini_client:
+                provider_used["name"] = "Gemini"
+                try:
+                    yield from stream_gemini()
+                    return
+                except Exception:
+                    pass
+
+            if xai_client:
+                provider_used["name"] = "Grok"
                 yield from stream_grok()
+                return
+
+            raise RuntimeError(
+                "OpenRouter failed and no fallback provider (Gemini/Grok) "
+                "is configured."
+            )
 
         full_response = None
         try:
             full_response = st.write_stream(stream_answer)
-        except genai_errors.ClientError as e:
-            if e.code in (400, 401, 403) and "API key" in (e.message or ""):
-                st.error("Invalid Gemini API key. Check `GEMINI_API_KEY` and try again.")
-            elif e.code == 429:
-                st.error("Rate limited by the Gemini API. Please wait a moment and try again.")
-            else:
-                st.error(f"Gemini API error: {e.message or e}")
-        except genai_errors.ServerError as e:
-            st.error(f"Gemini API server error, please retry: {e.message or e}")
-        except genai_errors.APIError as e:
-            st.error(f"Gemini API error: {e.message or e}")
         except Exception as e:
-            st.error(f"Grok API error: {e}")
+            st.error(f"All providers failed. Last error: {e}")
 
-        if used_fallback["value"] and full_response:
-            st.caption("⚡ Answered by Grok (Gemini was unavailable)")
+        if provider_used["name"] != "OpenRouter" and full_response:
+            st.caption(
+                f"⚡ Answered by {provider_used['name']} "
+                "(OpenRouter was unavailable)"
+            )
 
     if full_response:
         st.session_state.messages.append(
